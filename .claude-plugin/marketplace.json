@@ -1,0 +1,15 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "granola-transcript-skill",
+  "description": "Marketplace for the granola-transcript Claude Code skill",
+  "owner": {
+    "name": "phoolish"
+  },
+  "plugins": [
+    {
+      "name": "granola-transcript",
+      "description": "Pull a Granola meeting transcript into a repo, cache it, and verify the AI summary against it claim by claim.",
+      "source": "./plugins/granola-transcript"
+    }
+  ]
+}
