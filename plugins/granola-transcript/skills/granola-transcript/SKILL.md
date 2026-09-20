@@ -19,6 +19,8 @@ The cheap way: fetch once inside a subagent that writes the transcript to disk a
 
 The skill needs one thing from the host repo: **where cached transcripts live.** Default `meetings/transcripts/`.
 
+One more optional fact, read the same way: a **dual-cache policy** — whether the repo deliberately stores the same transcript body under more than one path (per-branch or per-topic copies). Default: no. The bulk integrity pass treats two identical transcript bodies as corruption unless the repo declares this.
+
 If the host repo's `CLAUDE.md` (or equivalent) names a different cache directory, note conventions, frontmatter schema, or commit rules, those win over the defaults here. Check for them before writing anything. Likewise, if the repo carries its own guidance on verifying sources or handling meeting records, read it first — it supplements the verification rules below rather than being replaced by them.
 
 ## Procedure
@@ -39,10 +41,12 @@ A re-pull overwrites the cache file and updates `pulled:`. **If the transcript g
 
 Spawn a subagent for the fetch so the transcript never enters the main context. Its whole job:
 
+- **Work in a private scratch directory.** Concurrent fetches that share a directory and pick the same obvious names (`raw.json`, `build.py`, `summary.txt`) overwrite each other mid-task, and the result is a cache file with correct frontmatter and `granola_id` over a **different** meeting's transcript — invisible to every later check, because grep then answers confidently from the wrong meeting. Each subagent creates its own scratch directory and writes **every** intermediate file there. Never write intermediates to a shared path.
 - `get_meetings` for the summary and metadata, `get_meeting_transcript` for the verbatim text.
 - Apply any name-normalisation aliases the host repo defines to the transcript and attendee list before writing.
 - Write the cache file (format below), stamping `pulled:` with today's date. On a re-pull, overwrite in place and update `pulled:`.
-- Return **only**: the file path, the attendee list, the summary verbatim, and a **claim checklist** — one line per figure, attribution, date, and named commitment in the summary.
+- **Prove the file is the right meeting before reporting done.** Re-read the cache file just written; confirm its `granola_id` equals the id this subagent was handed, and that the body is on-topic for the title. A summary-vs-transcript check cannot catch a whole-transcript swap — only this can. State the result in the report: not "written", but "written and re-read: granola_id matches, body on-topic".
+- Return **only**: the file path, the outcome (see Outcomes), the identity-check result, the value verdict, the attendee list drawn from the transcript, the summary verbatim, and a **claim checklist** — one line per figure, attribution, date, and named commitment in the summary.
 
 The subagent's context absorbs the bulk. The main context gets back a small payload it can work from.
 
@@ -57,8 +61,11 @@ For each item on the checklist, `grep` the cached transcript for the figure or n
 
 Verification rules:
 
+- **Sanity-check the meeting's identity, not just its claims.** Granola sometimes attaches a title and attendee list to a recording of a **different** meeting — one run carried a ten-person client attendee list for a meeting where none of them speak. Before verifying claims, confirm the content matches the title and that listed participants actually appear. If they do not, do not assert the attendee list. When content and title disagree, **content decides where the file belongs**: keep the original title in frontmatter, but name the file for what the meeting actually is.
 - **Attribute from content, not just speaker labels.** Diarisation mislabels speakers, and it mislabels them in ways that look clean. For anything about who owns, asked for, or committed to something, resolve it from what is actually said and **write the tell into the note**.
+- **The attendee list is a claim, not a fact.** It routinely lists only the note-taker when five to ten people spoke, lists invitees who never joined, and occasionally splits one person in two across two email addresses. Build the list from the transcript: add every speaker the transcript names, drop invitees who never speak, and collapse a person who appears twice.
 - **Resolve bare first names against the attendee list**, not against whoever is usually discussed.
+- **Do not let repo vocabulary become a transcript claim.** A subagent that has read the host repo's docs absorbs its terms and can write one into what reads as a quote — e.g. "DPO sign-off" where the transcript said "deletion policies" and "data retention" and never said DPO. This is the same error the skill exists to prevent, arriving by a route it does not otherwise name. Keep what was **said** separate from what you **resolved** using repo context, and never substitute the repo's preferred term for the words actually used.
 - **Log third-party claims as "X said Y", never as "Y".**
 - **Money and contractual figures get a harder test.** A transcript proves someone said a number, not that the number is right. Check those against the authoritative paperwork, not the transcript.
 
@@ -95,6 +102,27 @@ A cached transcript is ground truth every branch may need, so it should not wait
 
 Only the raw transcript and its index entry go to main. The distilled note is **not** in this PR — the interpretation stays on the feature branch under review. If a re-pull changed the transcript, publish the newer file the same way.
 
+## Outcomes
+
+Not every meeting yields a cached transcript. A fetch ends in one of these, and the report says which:
+
+- **CACHED** — written, re-read, identity confirmed. The normal path.
+- **EMPTY** — the meeting recorded nothing usable. Write no file; report it so the gap is explained rather than looking like a miss.
+- **BLOCKED** — the transcript exists but cannot be reproduced: an output content filter fires when the text is written out. The no-retype fallback (save the tool result straight to a file) works only when the result is large enough to be saved as a file, not when it comes back inline. Record the `granola_id` and the reason so the meeting stays re-fetchable, and write no partial file.
+
+Also assign each meeting a **value verdict** — `keep` (has verifiable substance) or `low-value` (a test recording, an empty hold, a two-line check-in) — so a bulk run hands back deletion candidates. Report the low-value ones; let the human delete.
+
+## Running this in bulk
+
+Bulk is where the failures above actually bite. For an import of many meetings at once:
+
+1. **Build a manifest first.** One row per meeting: `granola_id`, title, date, target cache path. Everything downstream keys off it, and the integrity pass checks against it.
+2. **Batch three or four meetings per subagent.** A transcript is 15k–30k tokens; ten per agent truncates. Three or four fits.
+3. **Isolate scratch per agent** (step 2). This is what stops concurrent fetches from overwriting each other's intermediates.
+4. **Each subagent reports per meeting:** outcome (CACHED / EMPTY / BLOCKED), the identity self-check result, attendees drawn from the transcript, and the value verdict.
+5. **Run a mandatory integrity pass before committing anything.** Checksum every transcript body across the whole set. **Identical bodies mean cross-contamination** — two cache files with correct-but-different frontmatter over the same transcript — unless the host repo deliberately dual-caches (see Configuration). Any collision is a corrupted fetch: re-fetch those meetings before committing.
+6. Commit only after the integrity pass is clean, following the two-commit rule below.
+
 ## Sharing a cached transcript into other branches
 
 Publishing to main reaches every *new* branch, and any branch that later syncs main. It does not reach back into branches that already diverged. When the user names specific existing branches that need a transcript now, cherry-pick the transcript commit onto each — and nothing else.
@@ -129,6 +157,8 @@ status: raw
 
 Match the host repo's frontmatter and tagging conventions where it has them.
 
+When the content contradicts the Granola title (see the identity sanity-check), keep the original in `title:` and slug the **filename** for what the meeting actually is; note the mismatch. When the attendee list cannot be trusted, populate `attendees:` from transcript speakers only, or leave it out — do not copy Granola's list uncritically.
+
 Then:
 
 - `## Summary (AI-generated, hypothesis, unverified)` — the summary verbatim, in a warning callout.
@@ -141,3 +171,4 @@ Then:
 - Do not load the full transcript into the main context to "double check". If grep did not settle it, read a wider window — still on the file.
 - A re-pull is the only thing that should overwrite a cache file, and only with a fresh fetch of the same meeting. Never hand-edit a transcript to "update" it.
 - Transcripts can contain confidential and personal material. Cache them only in a repo whose access boundary suits the content, and keep the distilled note in draft until a human has reviewed it.
+- A calendar-driven capture will eventually pull in something genuinely personal — unrelated to any work the repo covers, carrying other people's private details. One will. Do not commit it. Report it and let the human decide.
