@@ -1,7 +1,7 @@
 {
   "name": "granola-transcript",
-  "description": "Pull a Granola meeting transcript into a repo, cache it, and verify the AI summary against it claim by claim.",
-  "version": "0.1.0",
+  "description": "Verify a Granola meeting summary against the transcript claim by claim, live or from a transcript cached in the repo.",
+  "version": "0.2.0",
   "author": {
     "name": "phoolish"
   },
