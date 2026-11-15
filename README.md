@@ -10,7 +10,7 @@ AI meeting summaries invent detail. They fabricate figures, misattribute commitm
 
 A full transcript pull costs 15k to 30k tokens, so verifying against it naively is expensive enough that people stop doing it. This skill makes it cheap two ways:
 
-- **Verify live.** Search inside one meeting's transcript for a few sharp keywords and read only the matching chunks. About 5k tokens a claim, nothing written to disk. Every verification leaves one paraphrased row in a ledger file.
+- **Verify live.** Search inside one meeting's transcript for a few sharp keywords and read only the matching chunks. About 5k tokens a claim, no transcript copy on disk. Every verification leaves one paraphrased row in a ledger file.
 - **Fetch once and cache.** The bulky fetch happens **inside a subagent**, which writes the transcript to disk and returns only a small payload (a file path, the attendee list, and a checklist of claims). Verification then greps the on-disk file. Because the transcript is committed, the fetch happens **once ever**.
 
 Either way, a cached file is always checked first.

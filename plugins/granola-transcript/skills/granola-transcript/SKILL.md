@@ -15,7 +15,7 @@ A full `get_meeting_transcript` pull costs 15k to 30k tokens for a long meeting.
 
 There are two cheaper ways, and the skill uses both:
 
-- **Verify live.** `search_transcripts` finds the passages inside one meeting's transcript that match a few keywords, and `get_meeting_transcript` with `chunk_ids` reads just those chunks. A claim costs about 5k tokens and nothing is written to disk.
+- **Verify live.** `search_transcripts` finds the passages inside one meeting's transcript that match a few keywords, and `get_meeting_transcript` with `chunk_ids` reads just those chunks. A claim costs about 5k tokens and no transcript copy lands on disk (just one paraphrased ledger row per meeting).
 - **Fetch once and cache.** A subagent pulls the whole transcript, writes it to the repo and hands back a small payload. Every later session on any machine greps a local file for free.
 
 Which one runs is the host repo's call, through the cache policy below.
